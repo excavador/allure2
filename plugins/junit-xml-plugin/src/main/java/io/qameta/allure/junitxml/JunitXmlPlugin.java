@@ -23,6 +23,7 @@ import io.qameta.allure.datetime.CompositeDateTimeParser;
 import io.qameta.allure.datetime.DateTimeParser;
 import io.qameta.allure.datetime.LocalDateTimeParser;
 import io.qameta.allure.datetime.ZonedDateTimeParser;
+import io.qameta.allure.entity.Attachment;
 import io.qameta.allure.entity.LabelName;
 import io.qameta.allure.entity.StageResult;
 import io.qameta.allure.entity.Status;
@@ -55,7 +56,6 @@ import java.util.stream.Stream;
 
 import static io.qameta.allure.entity.LabelName.RESULT_FORMAT;
 import static java.nio.file.Files.newDirectoryStream;
-import static java.util.Collections.singletonList;
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 
@@ -177,14 +177,33 @@ public class JunitXmlPlugin implements Reader {
         result.setFlaky(isFlaky(testCaseElement));
         setStatusDetails(result, testCaseElement);
 
+        final List<Attachment> attachmentList = new ArrayList<>();
+        final String name = testCaseElement.getAttribute(NAME_ATTRIBUTE_NAME);
+        if (!name.isEmpty()) {
+            final String stdPrefix = name.replaceAll("/", "_");
+            Optional.ofNullable(stdPrefix)
+                    .map(prefix -> prefix + ".stdout.txt")
+                    .map(resultsDirectory::resolve)
+                    .filter(Files::exists)
+                    .map(visitor::visitAttachmentFile)
+                    .map(attachment1 -> attachment1.setName("stdout"))
+                    .ifPresent(attachment -> attachmentList.add(attachment));
+            Optional.ofNullable(stdPrefix)
+                    .map(prefix -> prefix + ".stderr.txt")
+                    .map(resultsDirectory::resolve)
+                    .filter(Files::exists)
+                    .map(visitor::visitAttachmentFile)
+                    .map(attachment1 -> attachment1.setName("stderr"))
+                    .ifPresent(attachment -> attachmentList.add(attachment));
+        }
         getLogFile(resultsDirectory, className)
                 .filter(Files::exists)
                 .map(visitor::visitAttachmentFile)
                 .map(attachment1 -> attachment1.setName("System out"))
-                .ifPresent(attachment -> result.setTestStage(
-                        new StageResult().setAttachments(singletonList(attachment))
-                ));
-
+                .ifPresent(attachment -> attachmentList.add(attachment));
+        if (!attachmentList.isEmpty()) {
+            result.setTestStage(new StageResult().setAttachments(attachmentList));
+        }
         visitor.visitTestResult(result);
 
         RETRIES.forEach((elementName, retryStatus) -> testCaseElement.get(elementName).forEach(failure -> {
